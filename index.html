@@ -237,6 +237,7 @@ tr.hd>td{background:rgba(255,255,255,.028);padding:16px 18px 18px}
 .vp.sm{font-size:10.5px;padding:0 6px}
 .v-buy{border:2px solid var(--st-good);box-shadow:0 0 14px rgba(122,255,191,.25)}.v-buy i{color:var(--st-good)}
 .v-close{border:2px dotted var(--st-neutral)}.v-close i{color:var(--st-neutral)}
+.v-consider{border:3px double var(--st-neutral)}.v-consider i{color:var(--st-neutral)}
 .v-wait{border:2px dashed var(--st-watch)}.v-wait i{color:var(--st-watch)}
 .v-fake{border:2px solid var(--st-bad);background-image:repeating-linear-gradient(45deg,rgba(var(--bad),.18) 0 4px,transparent 4px 8px)}
 .v-fake i{color:var(--st-bad)}
@@ -439,7 +440,8 @@ const card = (title, body, o={}) => `<section class="card rise ${o.cls||''}" ${o
 /* ------------------------------ deals page ------------------------------ */
 const M = DATA.meta, K = DATA.kpis, G = DATA.groups;
 const TABS = ['summary', ...G.map(g => g.id)];
-const V = {buy:['●','BUY','buy'], close:['◇','CLOSE','close'], fake:['■','FAKE','fake'], wait:['▲','WAIT','wait'], nodata:['◇','NO DATA','nodata']};
+const V = {buy:['●','BUY','buy'], close:['◇','CLOSE','close'], consider:['◆','CONSIDER','consider'], fake:['■','FAKE','fake'],
+  wait:['▲','WAIT','wait'], nodata:['◇','NO DATA','nodata']};
 const vp = (v, cls='') => { const [g, w, c] = V[v] || V.wait; return `<span class="vp v-${c} ${cls}"><i>${g}</i> ${w}</span>`; };
 const money = v => v == null ? '–' : gbp(v, 2);
 const dlt = (v, what) => v == null ? '<span class="flat">–</span>' : Math.abs(v) < 0.005 ? `<span class="flat">→ at the ${what}</span>`
@@ -491,7 +493,8 @@ function summary(){
     + `<th class="n hide-sm">vs lowest</th><th class="n hide-sm">vs 30-day median</th><th class="hide-sm">Last 30 days</th><th class="hide-sm">Why</th></tr></thead><tbody>${rows}</tbody></table></div>`,
     {aside: 'best = cheapest trusted retailer, in stock, incl. delivery · tap a row for detail'});
   h += coverage();
-  h += `<p class="foot">● BUY at or below the lowest price recorded · ◇ CLOSE within ${Math.round(M.close_band * 100)}% of it · ■ FAKE a retailer's "was" price `
+  h += `<p class="foot">● BUY at or below the lowest price ever recorded (archived prices from the Wayback Machine included) · ◇ CLOSE within ${Math.round(M.close_band * 100)}% of it · `
+    + `◆ CONSIDER at its lowest of the last ${M.consider_days} days (a real dip, not a flat week) · ■ FAKE a retailer's "was" price `
     + `its own recent prices don't support · ▲ WAIT otherwise. Only established retailers count; marketplace sellers show greyed. Prices from idealo.co.uk `
     + `and the retailers' own pages, fetched ${M.fetched_at ? esc(dNice(M.fetched_at.slice(0, 10))) + ' ' + esc(M.fetched_at.slice(11, 16)) : '–'}.</p>`;
   return h;
@@ -551,7 +554,7 @@ function verdictCard(g){
   const v = g.verdict, b = v.best;
   const body = `${vp(v.verdict, 'big')}<p class="why">${esc(v.reason)}</p><div class="kvg">`
     + kv('Best today', b ? money(b.total) : '–', b ? `${esc(b.retailer)} · ${esc(b.label)}` : 'nothing trusted in stock')
-    + kv('Lowest recorded', money(v.low), v.low_date ? esc(dShort(v.low_date)) : 'no earlier day yet')
+    + kv('Lowest recorded', money(v.low), v.low_date ? esc(dShort(v.low_date)) + (v.low_source === 'wayback' ? ` · ○ archived (${v.archive_days} archived day${v.archive_days === 1 ? '' : 's'})` : '') : 'no earlier day yet')
     + kv('30-day median', money(v.median30), v.median30 == null ? 'needs earlier days' : dlt(v.delta_median, 'median'))
     + kv('Your target', v.target == null ? '–' : money(v.target), v.target == null ? 'none set (optional)' : (b && b.total <= v.target ? '● met' : '▲ not met'))
     + '</div>';
@@ -561,12 +564,14 @@ function verdictCard(g){
   return card(esc(g.label), body + fbs, {aside: `${v.own_days} day${v.own_days === 1 ? '' : 's'} of history`});
 }
 function histOpt(g){
-  const dates = [...new Set(g.products.flatMap(p => p.series.map(s => s.d)))].sort();
-  const series = g.products.map((p, i) => { const by = Object.fromEntries(p.series.map(s => [s.d, s]));
-    return {name: p.label + (p.role === 'fallback' ? ' (fallback)' : ''), type: 'line', connectNulls: true, showSymbol: true, symbolSize: 8,
+  // a true time axis: archived points sit months apart, and even spacing would fake the gaps (2026-10-28)
+  const series = g.products.map((p, i) => ({name: p.label + (p.role === 'fallback' ? ' (fallback)' : ''), type: 'line', showSymbol: true, symbolSize: 8,
       symbol: SYM[PAL.markers[i % PAL.markers.length]] || 'circle', color: PAL.series[i % PAL.series.length],
       lineStyle: {width: 2.2, type: dash(i)},
-      data: dates.map(d => by[d] ? {value: by[d].v, itemStyle: by[d].src === 'wayback' ? {color: 'transparent', borderColor: PAL.series[i % PAL.series.length], borderWidth: 2} : undefined} : null)}; });
+      // break the line over gaps > 10 days: a straight segment across months with no data would draw a trend that never happened
+      data: p.series.flatMap((s, j, a) => { const pt = {value: [s.d, s.v], itemStyle: s.src === 'wayback' ? {color: 'transparent', borderColor: PAL.series[i % PAL.series.length], borderWidth: 2} : undefined};
+        return j && Date.parse(s.d) - Date.parse(a[j - 1].d) > 10 * 864e5 ? [{value: [s.d, null]}, pt] : [pt]; })}));
+  const ymd = t => { const D = new Date(t); return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, '0')}-${String(D.getDate()).padStart(2, '0')}`; };
   const v = g.verdict, marks = [];
   if(v.low != null) marks.push({yAxis: v.low, name: 'lowest', label: {formatter: 'lowest ' + gbp(v.low, 2), color: PAL.ink2, position: 'insideEndTop'}, lineStyle: {color: PAL.status.GOOD, type: 'dashed'}});
   if(v.target != null) marks.push({yAxis: v.target, name: 'target', label: {formatter: 'target ' + gbp(v.target, 2), color: PAL.ink2, position: 'insideStartTop'}, lineStyle: {color: PAL.ink2, type: 'dotted'}});
@@ -574,8 +579,8 @@ function histOpt(g){
   return {grid: {left: 64, right: 22, top: 44, bottom: 34},
     legend: {type: 'scroll', top: 0, left: 0, right: 0, itemWidth: 26, itemGap: 18,
       textStyle: {color: PAL.ink2, fontSize: 12, width: 230, overflow: 'truncate'}},
-    tooltip: {trigger: 'axis', valueFormatter: x => x == null ? '–' : gbp(x, 2)},
-    xAxis: AX({type: 'category', data: dates, axisLabel: {formatter: d => dShort(d)}}),
+    tooltip: {trigger: 'axis', valueFormatter: x => x == null ? '–' : gbp(Array.isArray(x) ? x[1] : x, 2)},
+    xAxis: AX({type: 'time', axisLabel: {formatter: t => dShort(ymd(t)), hideOverlap: true}}),
     yAxis: AX({type: 'value', scale: true, axisLabel: {formatter: x => '£' + x}}), series};
 }
 function groupPane(g){
