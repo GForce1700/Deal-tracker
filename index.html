@@ -262,6 +262,40 @@ a{color:var(--accent)}
 .empty{padding:28px;text-align:center;color:var(--ink2)}
 .tiles{grid-template-columns:repeat(4,minmax(0,1fr))}
 .show-sm,.tbl td small.show-sm{display:none}
+/* left sidebar: replaced the cockpit's top tab bar, which got crowded past ~8 items (George, 2026-10-28).
+   Current item = bold name + left bar + card fill, never hue alone. Under 980px it becomes a slide-out drawer. */
+.layout{display:grid;grid-template-columns:272px minmax(0,1fr);gap:26px;align-items:start}
+.side{position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto;overscroll-behavior:contain;padding:2px 6px 12px 0;scrollbar-width:thin}
+.sidenav h4{margin:18px 12px 6px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-weight:750}
+.sidenav button{display:block;width:100%;text-align:left;font:inherit;color:var(--ink2);background:none;cursor:pointer;
+  border:0;border-left:3px solid transparent;border-radius:0 10px 10px 0;padding:8px 10px 9px 12px;margin:1px 0}
+.sidenav button:hover{background:rgba(255,255,255,.04);color:var(--ink)}
+.sidenav button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sidenav button[aria-current=page]{color:var(--ink);background:var(--card);border-left-color:var(--accent);box-shadow:inset 0 0 0 1px var(--card-b)}
+.sidenav .nm{display:block;font-size:14px;font-weight:650;line-height:1.3}
+.sidenav button[aria-current=page] .nm{font-weight:800}
+.sidenav .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:12.5px}
+.sidenav .meta b{color:var(--ink);font-weight:700}
+.side-toggle,.side-scrim,.side-close{display:none}
+@media (max-width:1180px){.tiles,.kvg{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:980px){
+  .layout{display:block}
+  .side-toggle{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;width:100%;margin:0 0 16px;padding:11px 14px;
+    font:inherit;font-size:14.5px;font-weight:700;color:var(--ink);text-align:left;cursor:pointer;
+    background:var(--page);border:1px solid var(--card-b);border-radius:12px}
+  .side-toggle .hb{font-size:18px;line-height:1;color:var(--accent)}
+  .side-toggle .cur{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .side-toggle .ct{color:var(--ink3);font-size:12px;font-weight:600;white-space:nowrap}
+  .side{position:fixed;z-index:40;top:0;bottom:0;left:0;width:min(320px,86vw);max-height:none;padding:14px 10px 28px 6px;
+    background:var(--page);border-right:1px solid var(--card-b);transform:translateX(-102%);visibility:hidden;
+    transition:transform .25s cubic-bezier(.2,.8,.2,1),visibility 0s linear .25s}
+  body.side-open .side{transform:none;visibility:visible;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+  body.side-open{overflow:hidden}
+  body.side-open .side-scrim{display:block;position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.6)}
+  .side-close{display:block;margin:0 4px 4px auto;font:inherit;font-size:13px;font-weight:700;color:var(--ink2);background:none;
+    border:1px solid var(--card-b);border-radius:999px;padding:5px 12px;cursor:pointer}
+}
+@media (prefers-reduced-motion: reduce){.side,body.side-open .side{transition:none}}
 @media (max-width:760px){
   .wrap{padding:0 16px 40px}
   header.top{flex-wrap:wrap;gap:10px;padding:16px 0 8px}
@@ -271,9 +305,6 @@ a{color:var(--accent)}
   .tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .tile{min-height:0;padding:14px 14px 12px}.tile .n{font-size:28px;margin:8px 0 4px}
   .tile .n.await{font-size:16px;padding:6px 10px}
-  nav.tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-  nav.tabs::-webkit-scrollbar{display:none}
-  nav.tabs button{white-space:nowrap;padding:10px 14px 12px;font-size:14px}
   .kvg{grid-template-columns:repeat(2,minmax(0,1fr))}
   .card{padding:14px}
   .ch{flex-wrap:wrap}.ch .aside{margin-left:0;text-align:left}
@@ -303,8 +334,12 @@ a{color:var(--accent)}
   <span class="sp"></span>
   <div class="pills"><div id="fresh" class="fresh"></div><div id="bf" class="fresh"></div></div>
 </header>
-<nav class="tabs" role="tablist"></nav>
+<button class="side-toggle" type="button" aria-controls="side" aria-expanded="false"></button>
+<div class="layout">
+<aside class="side" id="side"><button class="side-close" type="button">✕ Close</button><nav class="sidenav" aria-label="Items"></nav></aside>
 <main></main>
+</div>
+<div class="side-scrim"></div>
 </div>
 <script id="deals-data" type="application/json"></script>
 <script>window.__deals = function(){
@@ -553,31 +588,55 @@ function groupPane(g){
 }
 
 /* ------------------------------ chrome ------------------------------ */
+// left sidebar: Summary, then the items in sections by category (a top tab bar got crowded past ~8 items)
+const CAT = {'kitchen-appliance': 'Kitchen', beauty: 'Beauty', aquarium: 'Aquarium'};
+const catName = c => CAT[c] || String(c || 'other').replace(/-/g, ' ').replace(/^./, s => s.toUpperCase());
+function navItem(g){
+  if(!g){ const buys = G.filter(x => x.verdict.verdict === 'buy').length;
+    return `<button type="button" data-tab="summary"><span class="nm">Summary</span>`
+      + `<span class="meta">${G.length} item${G.length === 1 ? '' : 's'} · ${buys ? `<b>${buys} at ● BUY</b>` : 'none at BUY'}</span></button>`; }
+  const b = g.verdict.best;
+  return `<button type="button" data-tab="${esc(g.id)}"><span class="nm">${esc(g.label)}</span>`
+    + `<span class="meta">${vp(g.verdict.verdict, 'sm')}<b>${b ? money(b.total) : '–'}</b></span></button>`;
+}
 function chrome(){
   const f = M.fetched_at;
   document.getElementById('fresh').innerHTML = f ? `<span class="g">●</span> updated ${esc(dNice(f.slice(0, 10)))} ${esc(f.slice(11, 16))} · day ${K.history_days}` : '◇ no fetch yet';
   document.getElementById('bf').innerHTML = `◆ Black Friday ${esc(dShort(M.bf_date))}`;
-  const nav = document.querySelector('nav.tabs');
-  nav.innerHTML = TABS.map(t => { const g = G.find(x => x.id === t);
-    return `<button role="tab" data-tab="${esc(t)}" aria-selected="${t === st.tab}">${t === 'summary' ? 'Summary' : esc(g.label) + ' ' + (V[g.verdict.verdict] || V.wait)[0]}</button>`; }).join('') + '<span class="ink"></span>';
+  const cats = [...new Set(G.map(g => g.category))];
+  document.querySelector('.sidenav').innerHTML = navItem(null)
+    + cats.map(c => `<h4>${esc(catName(c))}</h4>` + G.filter(g => g.category === c).map(navItem).join('')).join('');
   document.querySelector('main').innerHTML = TABS.map(t => `<section class="pane" data-pane="${esc(t)}"></section>`).join('');
   if(DATA.meta.live_stale && DATA.stale_preview){ document.body.classList.add('stale');
     document.getElementById('stale-text').textContent = DATA.stale_preview.reason + '. Prices below are from the last fetch.'; }
 }
-function moveInk(){ const b = document.querySelector(`nav.tabs button[data-tab="${st.tab}"]`), ink = document.querySelector('nav.tabs .ink');
-  if(b && ink){ ink.style.left = b.offsetLeft + 'px'; ink.style.width = b.offsetWidth + 'px'; } }
+function keepInView(){   // scroll the sidebar (not the page) so the current item is visible
+  const s = document.querySelector('.side'), a = document.querySelector('.sidenav [aria-current]');
+  if(s && a && (a.offsetTop < s.scrollTop || a.offsetTop + a.offsetHeight > s.scrollTop + s.clientHeight)) s.scrollTop = a.offsetTop - 60;
+}
+function side(open){     // the phone drawer; on a wide screen the class does nothing
+  const was = document.body.classList.contains('side-open'), t = document.querySelector('.side-toggle');
+  document.body.classList.toggle('side-open', open);
+  if(t) t.setAttribute('aria-expanded', String(open));
+  if(open){ keepInView(); const a = document.querySelector('.sidenav [aria-current]'); if(a) a.focus({preventScroll: true}); }
+  else if(was && t) t.focus({preventScroll: true});
+}
 function render(){
-  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === st.tab)));
+  document.querySelectorAll('.sidenav button').forEach(b => { if(b.dataset.tab === st.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  const g = G.find(x => x.id === st.tab), t = document.querySelector('.side-toggle');
+  if(t) t.innerHTML = `<span class="hb" aria-hidden="true">☰</span><span class="cur">${g ? esc(g.label) : 'Summary'}</span>`
+    + `${g ? vp(g.verdict.verdict, 'sm') : ''}<span class="ct">${G.length} items</span>`;
   document.querySelectorAll('.pane').forEach(p => { const on = p.dataset.pane === st.tab; p.classList.toggle('on', on);
     if(on){ Chart.disposeIn(p); p.innerHTML = st.tab === 'summary' ? summary() : groupPane(G.find(g => g.id === st.tab)); } });
-  flush(); moveInk();
+  flush(); keepInView();
 }
-function go(t){ st.tab = t; try{ history.replaceState(null, '', '#' + t); }catch(e){} render(); window.scrollTo({top: 0, behavior: RM ? 'auto' : 'smooth'}); }
-document.addEventListener('click', ev => { const b = ev.target.closest('nav.tabs button'); if(b) return go(b.dataset.tab);
+function go(t){ st.tab = t; try{ history.replaceState(null, '', '#' + t); }catch(e){} side(false); render(); window.scrollTo({top: 0, behavior: RM ? 'auto' : 'smooth'}); }
+document.addEventListener('click', ev => { const b = ev.target.closest('.sidenav button'); if(b) return go(b.dataset.tab);
+  if(ev.target.closest('.side-toggle')) return side(!document.body.classList.contains('side-open'));
+  if(ev.target.closest('.side-scrim, .side-close')) return side(false);
   const r = ev.target.closest('tr.vrow'); if(r && !ev.target.closest('a')) go(r.dataset.go); });
+document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && document.body.classList.contains('side-open')) side(false); });
 chrome(); render();
-window.addEventListener('resize', moveInk);
-if(document.fonts && document.fonts.ready) document.fonts.ready.then(moveInk);
 })();
 };</script>
 <script>
