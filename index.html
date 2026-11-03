@@ -252,6 +252,12 @@ tr.hd>td{background:rgba(255,255,255,.028);padding:16px 18px 18px}
 .spark{display:block}
 .tblw{overflow-x:auto}
 tr.untr td{color:var(--ink3)}
+/* a discount code: monospace in a dashed box, so it reads as "type this" without relying on colour */
+.code{font-family:ui-monospace,Consolas,monospace;font-weight:700;letter-spacing:.04em;border:1.5px dashed var(--ink2);
+  border-radius:5px;padding:0 5px;white-space:nowrap}
+td.codec{min-width:170px;max-width:260px}td.codec small{white-space:normal}
+th small{display:block;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)}
+.flag.own{border-style:solid;color:var(--ink)}.flag.feed{border-style:dotted}
 .tbl td small.claim{color:var(--ink2);white-space:nowrap}
 details.others{margin-top:8px}details.others summary{cursor:pointer;color:var(--ink2);font-size:12.5px;font-weight:650}
 .fb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border:1px dotted var(--ink3);border-radius:12px;font-size:13.5px}
@@ -488,16 +494,28 @@ function summary(){
       + `<td class="n"><b>${b ? money(b.total) : '–'}</b><small>${b ? esc(b.retailer) : ''}</small></td>`
       + `<td class="n hide-sm">${dlt(v.delta_low, 'low')}<small>low ${money(v.low)}</small></td>`
       + `<td class="n hide-sm">${dlt(v.delta_median, 'median')}<small>median ${money(v.median30)}</small></td>`
+      + `<td class="hide-sm codec">${topCode(g.top_code)}</td>`
       + `<td class="hide-sm">${spark(g.spark)}</td><td class="hide-sm"><small>${esc(v.reason)}</small></td></tr>`; }).join('');
   h += card('Today\'s verdicts', `<div class="tblw"><table class="tbl"><thead><tr><th>Verdict</th><th>Item</th><th class="n">Best total</th>`
-    + `<th class="n hide-sm">vs lowest</th><th class="n hide-sm">vs 30-day median</th><th class="hide-sm">Last 30 days</th><th class="hide-sm">Why</th></tr></thead><tbody>${rows}</tbody></table></div>`,
-    {aside: 'best = cheapest trusted retailer, in stock, incl. delivery · tap a row for detail'});
+    + `<th class="n hide-sm">vs lowest</th><th class="n hide-sm">vs 30-day median</th><th class="hide-sm">Best code <small>any trusted shop</small></th>`
+    + `<th class="hide-sm">Last 30 days</th><th class="hide-sm">Why</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    {aside: 'best = cheapest trusted retailer, in stock, incl. delivery · codes are shown, never taken off · tap a row for detail'});
   h += coverage();
   h += `<p class="foot">● BUY at or below the lowest price ever recorded (archived prices from the Wayback Machine included) · ◇ CLOSE within ${Math.round(M.close_band * 100)}% of it · `
     + `◆ CONSIDER at its lowest of the last ${M.consider_days} days (a real dip, not a flat week) · ■ FAKE a retailer's "was" price `
-    + `its own recent prices don't support · ▲ WAIT otherwise. Only established retailers count; marketplace sellers show greyed. Prices from idealo.co.uk `
-    + `and the retailers' own pages, fetched ${M.fetched_at ? esc(dNice(M.fetched_at.slice(0, 10))) + ' ' + esc(M.fetched_at.slice(11, 16)) : '–'}.</p>`;
+    + `its own recent prices don't support · ▲ WAIT otherwise. Only established retailers count; marketplace sellers show greyed. Prices from the retailers' `
+    + `own pages where we can read them, otherwise their feed via idealo.co.uk or Trolley (marked "via"; a feed can miss an on-page offer), fetched `
+    + `${M.fetched_at ? esc(dNice(M.fetched_at.slice(0, 10))) + ' ' + esc(M.fetched_at.slice(11, 16)) : '–'}. Discount codes from VoucherCodes.co.uk `
+    + `and the shops' own banners (${M.codes_n} codes across ${M.codes_shops} shops${M.codes_fetched_at ? ', ' + esc(dNice(M.codes_fetched_at.slice(0, 10))) + ' ' + esc(M.codes_fetched_at.slice(11, 16)) : ''}): `
+    + `shown beside each price, never taken off it; check the terms at the checkout.</p>`;
   return h;
+}
+// the summary's code: the one that would take the most off any trusted shop's own price for the item
+function topCode(c){
+  if(!c) return '<span class="muted">none found</span>';
+  return `<span class="code">${esc(c.code)}</span> <b>${esc(c.label)}</b><small>at ${esc(c.retailer)} (${money(c.total)})`
+    + `${c.fit === 'check' ? ' · ◇ check it covers this item' : c.scope === 'sitewide' ? ' · site-wide' : ''}`
+    + `${c.min_spend != null ? ' · min spend ' + money(c.min_spend) : ''}${c.new_customers ? ' · new customers' : ''}</small>`;
 }
 function coverage(){
   const items = [];
@@ -528,6 +546,26 @@ function claim(o){
     : `none (${Math.abs(o.real_pct * 100).toFixed(0)}% ${o.real_pct < -0.005 ? 'above' : 'at'} its 30-day median)`;
   return h + `<small class="claim">${o.fake ? vp('fake', 'sm') + ' ' : ''}real saving: ${real}</small>`;
 }
+// The best discount code for a shop, shown BESIDE its price and never taken off it (George,
+// 2026-11-03): the code in a dashed box, its level, then its terms so the checkout holds no surprise.
+function codeTerms(c){
+  const t = [];
+  if(c.fit === 'check') t.push('◇ check it covers this item');
+  t.push(c.scope === 'sitewide' ? 'site-wide' : esc((c.scope_text || '').slice(0, 60)));
+  if(c.min_spend != null) t.push('min spend ' + money(c.min_spend));
+  if(c.new_customers) t.push('new customers');
+  (c.flags || []).forEach(f => t.push(esc(f)));
+  if(c.expires) t.push('ends ' + esc(dShort(c.expires)));
+  t.push(c.source === 'vouchercodes' ? 'VoucherCodes' + (c.verified ? ' (verified)' : '') : "shop's own banner");
+  return t.filter(Boolean).join(' · ');
+}
+function codeCell(o){
+  const c = o.code;
+  if(!o.trusted) return '<span class="muted">–</span>';
+  if(!c) return `<span class="muted">${o.codes_checked ? 'none found' : 'not checked'}</span>`;
+  return `<span class="code">${esc(c.code)}</span> <b>${esc(c.label)}</b><small>${codeTerms(c)}</small>`
+    + (c.alt ? `<small>new customers: <span class="code">${esc(c.alt.code)}</span> ${esc(c.alt.label)}</small>` : '');
+}
 function offerRow(o){
   const dl = o.delivery == null ? '<span class="muted">?</span>' : o.delivery === 0 ? 'free' : money(o.delivery);
   // the link lands on the retailer: its product page, its own search for this model, or a Google
@@ -535,17 +573,24 @@ function offerRow(o){
   const LK = {product: '', search: 'search on their site', google: 'Google search of their site', idealo: 'via idealo'};
   const name = o.url ? `<a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.retailer)} ↗</a>`
     + (LK[o.link_kind] ? `<small>${LK[o.link_kind]}</small>` : '') : esc(o.retailer);
-  // phone: Retailer (the link) · Total (+ delivery under it) · claim · stock glyph
-  return `<tr class="${o.trusted ? '' : 'untr'}"><td>${name}${o.source === 'direct' ? ' <span class="flag">own page</span>' : ''}</td>`
+  // a price copied from a comparison site's feed can miss the shop's own on-page offer (Boots £120 on
+  // Trolley vs £90 on its own page, 2026-11-03), so it says where it came from
+  const src = o.source === 'direct' ? ' <span class="flag own">own page</span>'
+    : o.source === 'idealo' || o.source === 'trolley' ? ` <span class="flag feed">via ${o.source === 'idealo' ? 'idealo' : 'Trolley'}</span>` : '';
+  // phone: Retailer (the link) · Total (+ delivery, claim and code under it) · stock glyph
+  return `<tr class="${o.trusted ? '' : 'untr'}"><td>${name}${src}</td>`
     + `<td class="n hide-sm">${money(o.price)}</td><td class="n hide-sm">${dl}</td>`
-    + `<td class="n"><b>${money(o.total)}</b><small class="show-sm">${o.delivery == null ? 'delivery ?' : o.delivery === 0 ? 'free delivery' : 'incl. ' + money(o.delivery) + ' delivery'}</small>${claim(o)}</td>`
+    + `<td class="n"><b>${money(o.total)}</b><small class="show-sm">${o.delivery == null ? 'delivery ?' : o.delivery === 0 ? 'free delivery' : 'incl. ' + money(o.delivery) + ' delivery'}</small>${claim(o)}`
+    + (o.trusted && o.code ? `<small class="show-sm">code <span class="code">${esc(o.code.code)}</span> ${esc(o.code.label)}</small>` : '') + '</td>'
+    + `<td class="hide-sm codec">${codeCell(o)}</td>`
     + `<td>${o.in_stock ? '●<span class="hide-sm"> in stock</span>' : '■<span class="hide-sm"> out of stock</span>'}</td></tr>`;
 }
 function offersTable(p){
-  const head = '<thead><tr><th>Retailer</th><th class="n hide-sm">Price</th><th class="n hide-sm">Delivery</th><th class="n">Total</th><th>Stock</th></tr></thead>';
+  const head = '<thead><tr><th>Retailer</th><th class="n hide-sm">Price</th><th class="n hide-sm">Delivery</th><th class="n">Total</th>'
+    + '<th class="hide-sm">Best code <small>not taken off the price</small></th><th>Stock</th></tr></thead>';
   const tr = p.offers.filter(o => o.trusted), un = p.offers.filter(o => !o.trusted);
   if(!p.offers.length) return '<p class="muted">◇ No prices today. See Sources on the Summary tab.</p>';
-  return `<div class="tblw"><table class="tbl">${head}<tbody>${tr.map(offerRow).join('') || '<tr><td colspan="5" class="muted">no established retailer lists it today</td></tr>'}</tbody></table></div>`
+  return `<div class="tblw"><table class="tbl">${head}<tbody>${tr.map(offerRow).join('') || '<tr><td colspan="6" class="muted">no established retailer lists it today</td></tr>'}</tbody></table></div>`
     + (un.length ? `<details class="others"><summary>Other sellers (${un.length}): marketplace or unknown shops, never used for the verdict</summary>`
        + `<div class="tblw"><table class="tbl"><tbody>${un.map(offerRow).join('')}</tbody></table></div></details>` : '');
 }
