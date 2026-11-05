@@ -257,7 +257,7 @@ tr.untr td{color:var(--ink3)}
   border-radius:5px;padding:0 5px;white-space:nowrap}
 td.codec{min-width:170px;max-width:260px}td.codec small{white-space:normal}
 th small{display:block;font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)}
-.flag.own{border-style:solid;color:var(--ink)}.flag.feed{border-style:dotted}
+.flag.own{border-style:solid;color:var(--ink)}.flag.feed{border-style:dotted}.flag.untrusted{border-style:double;border-width:3px;color:var(--ink);font-weight:800}
 .tbl td small.claim{color:var(--ink2);white-space:nowrap}
 details.others{margin-top:8px}details.others summary{cursor:pointer;color:var(--ink2);font-size:12.5px;font-weight:650}
 .fb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border:1px dotted var(--ink3);border-radius:12px;font-size:13.5px}
@@ -447,7 +447,7 @@ const card = (title, body, o={}) => `<section class="card rise ${o.cls||''}" ${o
 const M = DATA.meta, K = DATA.kpis, G = DATA.groups;
 const TABS = ['summary', ...G.map(g => g.id)];
 const V = {buy:['●','BUY','buy'], close:['◇','CLOSE','close'], consider:['◆','CONSIDER','consider'], fake:['■','FAKE','fake'],
-  wait:['▲','WAIT','wait'], nodata:['◇','NO DATA','nodata']};
+  wait:['▲','WAIT','wait'], nodata:['◇','NO DATA','nodata'], untrusted:['◇','NO VERDICT','nodata']};
 const vp = (v, cls='') => { const [g, w, c] = V[v] || V.wait; return `<span class="vp v-${c} ${cls}"><i>${g}</i> ${w}</span>`; };
 const money = v => v == null ? '–' : gbp(v, 2);
 const dlt = (v, what) => v == null ? '<span class="flat">–</span>' : Math.abs(v) < 0.005 ? `<span class="flat">→ at the ${what}</span>`
@@ -488,10 +488,10 @@ function summary(){
         base ? `verdicts unlock on ${esc(dNice(M.baseline_date))} (day ${M.baseline_days})` : `own daily record since ${esc(dShort(M.first_day))}`, 3)
     + '</div>';
   if(!G.length) return h + card('Watch list', '<div class="empty">◇ Nothing is being tracked. Add an item with <b>deals_cli.py add</b>.</div>');
-  const rows = G.map(g => { const v = g.verdict, b = v.best;
-    return `<tr class="vrow" data-go="${esc(g.id)}"><td>${vp(v.verdict)}</td>`
-      + `<td><b>${esc(g.label)}</b><small>${b ? esc(b.label) : '–'}</small><small class="show-sm">${esc(v.reason)}</small></td>`
-      + `<td class="n"><b>${b ? money(b.total) : '–'}</b><small>${b ? esc(b.retailer) : ''}</small></td>`
+  const rows = G.map(g => { const v = g.verdict, b = v.best, pb = g.promoted_best;
+    return `<tr class="vrow" data-go="${esc(g.id)}"><td>${vp(pb ? 'untrusted' : v.verdict)}</td>`
+      + `<td><b>${esc(g.label)}</b><small>${b ? esc(b.label) : pb ? esc(pb.label) : '–'}</small><small class="show-sm">${esc(v.reason)}</small></td>`
+      + `<td class="n"><b>${b ? money(b.total) : pb ? money(pb.total) : '–'}</b><small>${b ? esc(b.retailer) : pb ? esc(pb.retailer) + ' · <b>NOT TRUSTED</b>' : ''}</small></td>`
       + `<td class="n hide-sm">${dlt(v.delta_low, 'low')}<small>low ${money(v.low)}</small></td>`
       + `<td class="n hide-sm">${dlt(v.delta_median, 'median')}<small>median ${money(v.median30)}</small></td>`
       + `<td class="hide-sm codec">${topCode(g.top_code)}</td>`
@@ -503,7 +503,7 @@ function summary(){
   h += coverage();
   h += `<p class="foot">● BUY at or below the lowest price ever recorded (archived prices from the Wayback Machine included) · ◇ CLOSE within ${Math.round(M.close_band * 100)}% of it · `
     + `◆ CONSIDER at its lowest of the last ${M.consider_days} days (a real dip, not a flat week) · ■ FAKE a retailer's "was" price `
-    + `its own recent prices don't support · ▲ WAIT otherwise. Only established retailers count; marketplace sellers show greyed. Prices from the retailers' `
+    + `its own recent prices don't support · ▲ WAIT otherwise. Only established retailers count; marketplace sellers show greyed, and a shop marked NOT TRUSTED shows its price but never sets a verdict. Prices from the retailers' `
     + `own pages where we can read them, otherwise their feed via idealo.co.uk or Trolley (marked "via"; a feed can miss an on-page offer), fetched `
     + `${M.fetched_at ? esc(dNice(M.fetched_at.slice(0, 10))) + ' ' + esc(M.fetched_at.slice(11, 16)) : '–'}. Discount codes from VoucherCodes.co.uk `
     + `and the shops' own banners (${M.codes_n} codes across ${M.codes_shops} shops${M.codes_fetched_at ? ', ' + esc(dNice(M.codes_fetched_at.slice(0, 10))) + ' ' + esc(M.codes_fetched_at.slice(11, 16)) : ''}): `
@@ -575,10 +575,11 @@ function offerRow(o){
     + (LK[o.link_kind] ? `<small>${LK[o.link_kind]}</small>` : '') : esc(o.retailer);
   // a price copied from a comparison site's feed can miss the shop's own on-page offer (Boots £120 on
   // Trolley vs £90 on its own page, 2026-11-03), so it says where it came from
-  const src = o.source === 'direct' ? ' <span class="flag own">own page</span>'
-    : o.source === 'idealo' || o.source === 'trolley' ? ` <span class="flag feed">via ${o.source === 'idealo' ? 'idealo' : 'Trolley'}</span>` : '';
+  const src = (o.promoted ? ' <span class="flag untrusted">NOT TRUSTED</span>' : '')
+    + (o.source === 'direct' ? ' <span class="flag own">own page</span>'
+    : o.source === 'idealo' || o.source === 'trolley' ? ` <span class="flag feed">via ${o.source === 'idealo' ? 'idealo' : 'Trolley'}</span>` : '');
   // phone: Retailer (the link) · Total (+ delivery, claim and code under it) · stock glyph
-  return `<tr class="${o.trusted ? '' : 'untr'}"><td>${name}${src}</td>`
+  return `<tr class="${o.trusted || o.promoted ? '' : 'untr'}"><td>${name}${src}</td>`
     + `<td class="n hide-sm">${money(o.price)}</td><td class="n hide-sm">${dl}</td>`
     + `<td class="n"><b>${money(o.total)}</b><small class="show-sm">${o.delivery == null ? 'delivery ?' : o.delivery === 0 ? 'free delivery' : 'incl. ' + money(o.delivery) + ' delivery'}</small>${claim(o)}`
     + (o.trusted && o.code ? `<small class="show-sm">code <span class="code">${esc(o.code.code)}</span> ${esc(o.code.label)}</small>` : '') + '</td>'
@@ -588,7 +589,7 @@ function offerRow(o){
 function offersTable(p){
   const head = '<thead><tr><th>Retailer</th><th class="n hide-sm">Price</th><th class="n hide-sm">Delivery</th><th class="n">Total</th>'
     + '<th class="hide-sm">Best code <small>not taken off the price</small></th><th>Stock</th></tr></thead>';
-  const tr = p.offers.filter(o => o.trusted), un = p.offers.filter(o => !o.trusted);
+  const tr = p.offers.filter(o => o.trusted || o.promoted), un = p.offers.filter(o => !o.trusted && !o.promoted);
   if(!p.offers.length) return '<p class="muted">◇ No prices today. See Sources on the Summary tab.</p>';
   return `<div class="tblw"><table class="tbl">${head}<tbody>${tr.map(offerRow).join('') || '<tr><td colspan="6" class="muted">no established retailer lists it today</td></tr>'}</tbody></table></div>`
     + (un.length ? `<details class="others"><summary>Other sellers (${un.length}): marketplace or unknown shops, never used for the verdict</summary>`
@@ -596,9 +597,9 @@ function offersTable(p){
 }
 function kv(label, value, sub){ return `<div><span class="k">${label}</span><b>${value}</b><small>${sub || ''}</small></div>`; }
 function verdictCard(g){
-  const v = g.verdict, b = v.best;
-  const body = `${vp(v.verdict, 'big')}<p class="why">${esc(v.reason)}</p><div class="kvg">`
-    + kv('Best today', b ? money(b.total) : '–', b ? `${esc(b.retailer)} · ${esc(b.label)}` : 'nothing trusted in stock')
+  const v = g.verdict, b = v.best, pb = g.promoted_best;
+  const body = `${vp(pb ? 'untrusted' : v.verdict, 'big')}<p class="why">${esc(v.reason)}</p><div class="kvg">`
+    + kv('Best today', b ? money(b.total) : pb ? money(pb.total) : '–', b ? `${esc(b.retailer)} · ${esc(b.label)}` : pb ? `${esc(pb.retailer)} · NOT TRUSTED` : 'nothing trusted in stock')
     + kv('Lowest recorded', money(v.low), v.low_date ? esc(dShort(v.low_date)) + (v.low_source === 'wayback' ? ` · ○ archived (${v.archive_days} archived day${v.archive_days === 1 ? '' : 's'})` : '') : 'no earlier day yet')
     + kv('30-day median', money(v.median30), v.median30 == null ? 'needs earlier days' : dlt(v.delta_median, 'median'))
     + kv('Your target', v.target == null ? '–' : money(v.target), v.target == null ? 'none set (optional)' : (b && b.total <= v.target ? '● met' : '▲ not met'))
@@ -633,7 +634,7 @@ function groupPane(g){
   h += card('Best price per day', slot(el => Chart.mount(el, histOpt(g)), 'h-320'),
     {aside: 'cheapest trusted, in-stock total each day · one line per product'});
   g.products.forEach(p => { h += card(esc(p.label) + (p.role === 'fallback' ? ' <span class="tag">fallback</span>' : ''), offersTable(p),
-    {aside: `${p.offers.filter(o => o.trusted).length} established · ${p.offers.filter(o => !o.trusted).length} other`}); });
+    {aside: `${p.offers.filter(o => o.trusted).length} established · ${p.offers.filter(o => o.promoted).length ? p.offers.filter(o => o.promoted).length + ' not trusted · ' : ''}${p.offers.filter(o => !o.trusted && !o.promoted).length} other`}); });
   return h;
 }
 
@@ -645,9 +646,9 @@ function navItem(g){
   if(!g){ const buys = G.filter(x => x.verdict.verdict === 'buy').length;
     return `<button type="button" data-tab="summary"><span class="nm">Summary</span>`
       + `<span class="meta">${G.length} item${G.length === 1 ? '' : 's'} · ${buys ? `<b>${buys} at ● BUY</b>` : 'none at BUY'}</span></button>`; }
-  const b = g.verdict.best;
+  const b = g.verdict.best, pb = g.promoted_best;
   return `<button type="button" data-tab="${esc(g.id)}"><span class="nm">${esc(g.label)}</span>`
-    + `<span class="meta">${vp(g.verdict.verdict, 'sm')}<b>${b ? money(b.total) : '–'}</b></span></button>`;
+    + `<span class="meta">${vp(pb ? 'untrusted' : g.verdict.verdict, 'sm')}<b>${b ? money(b.total) : pb ? money(pb.total) : '–'}</b></span></button>`;
 }
 function chrome(){
   const f = M.fetched_at;
