@@ -499,7 +499,7 @@ function summary(){
   h += card('Today\'s verdicts', `<div class="tblw"><table class="tbl"><thead><tr><th>Verdict</th><th>Item</th><th class="n">Best total</th>`
     + `<th class="n hide-sm">vs lowest</th><th class="n hide-sm">vs 30-day median</th><th class="hide-sm">Best code <small>any trusted shop</small></th>`
     + `<th class="hide-sm">Last 30 days</th><th class="hide-sm">Why</th></tr></thead><tbody>${rows}</tbody></table></div>`,
-    {aside: 'best = cheapest trusted retailer, in stock, incl. delivery · codes are shown, never taken off · tap a row for detail'});
+    {aside: 'best = cheapest trusted retailer whose own page says in stock, incl. delivery · ◇ stock not confirmed (a feed copy) never counts · codes are shown, never taken off · tap a row for detail'});
   h += coverage();
   h += `<p class="foot">● BUY at or below the lowest price ever recorded (archived prices from the Wayback Machine included) · ◇ CLOSE within ${Math.round(M.close_band * 100)}% of it · `
     + `◆ CONSIDER at its lowest of the last ${M.consider_days} days (a real dip, not a flat week) · ■ FAKE a retailer's "was" price `
@@ -584,7 +584,10 @@ function offerRow(o){
     + `<td class="n"><b>${money(o.total)}</b><small class="show-sm">${o.delivery == null ? 'delivery ?' : o.delivery === 0 ? 'free delivery' : 'incl. ' + money(o.delivery) + ' delivery'}</small>${claim(o)}`
     + (o.trusted && o.code ? `<small class="show-sm">code <span class="code">${esc(o.code.code)}</span> ${esc(o.code.label)}</small>` : '') + '</td>'
     + `<td class="hide-sm codec">${codeCell(o)}</td>`
-    + `<td>${o.in_stock ? '●<span class="hide-sm"> in stock</span>' : '■<span class="hide-sm"> out of stock</span>'}</td></tr>`;
+    // three states, by shape (George is colour-deficient): the shop's page says in stock / it says out /
+    // nothing confirms it (a feed copy, or a page with no stock signal), which never counts for a verdict
+    + `<td>${o.stock === 'in' ? '●<span class="hide-sm"> in stock</span>' : o.stock === 'out' ? '■<span class="hide-sm"> out of stock</span>'
+        : '◇<span class="hide-sm"> not confirmed</span>'}</td></tr>`;
 }
 function offersTable(p){
   const head = '<thead><tr><th>Retailer</th><th class="n hide-sm">Price</th><th class="n hide-sm">Delivery</th><th class="n">Total</th>'
